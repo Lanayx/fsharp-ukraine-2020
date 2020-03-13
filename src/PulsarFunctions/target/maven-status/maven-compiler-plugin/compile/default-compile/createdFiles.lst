@@ -1,0 +1,7 @@
+org\apache\pulsar\functions\api\examples\WordCountFunction.class
+org\apache\pulsar\functions\api\examples\UserPublishFunction.class
+org\apache\pulsar\functions\api\examples\serde\CustomObject.class
+org\apache\pulsar\functions\api\examples\pojo\Tick.class
+org\apache\pulsar\functions\api\examples\VoidFunction.class
+org\apache\pulsar\functions\api\examples\serde\CustomObjectSerde.class
+org\apache\pulsar\functions\api\examples\WindowDurationFunction.class

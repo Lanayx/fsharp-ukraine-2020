@@ -1,0 +1,7 @@
+kubectl cp .\pulsar-functions-api-examples.jar pulsar-bastion-7597f44dd5-98mqm:/pulsar/examples/my-examples.jar
+
+bin/pulsar-admin functions create \
+  --jar examples/my-examples.jar \
+  --classname org.apache.pulsar.functions.api.examples.InventoryProcessor \
+  --topics-pattern persistent://public/default/.*?InventoryCommand \
+  --name inventory-command

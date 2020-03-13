@@ -1,0 +1,792 @@
+# Namespace to deploy pulsar
+# Use the Helm --namespace option to set the namespace
+
+# Override for the name of the helm deployment
+fullnameOverride: pulsar
+
+# DNS name for loadbalancer
+dnsName: pulsar.example.com
+
+
+# Global node selector
+# If set, this will apply to all components
+# Individual components can be set to a different node
+# selector
+#nodeSelector:
+#  zone: pulsar
+
+## If persistence is enabled, components that has state will
+## be deployed with PersistentVolumeClaims, otherwise, for test
+## purposes, they will be deployed with emptDir
+persistence: yes
+
+## If prometheus_persistence is enabled, prometheus will be deployed
+## with PersistentVolumeClaims, otherwise, for test purposes, they
+## will be deployed with emptyDir
+prometheus_persistence: yes
+
+prometheus_rbac: yes
+
+# For AWS
+# default_storage:
+#  provisioner: kubernetes.io/aws-ebs
+#  type: gp2
+#  fsType: ext4
+#  extraParams:
+#     iopsPerGB: "10"
+
+
+# For GCP
+# default_storage:
+#   provisioner: kubernetes.io/gce-pd
+#   type: pd-ssd
+#   fsType: ext4
+#   extraParams:
+#      replication-type: none
+
+# For Azure
+# default_storage:
+#   provisioner: kubernetes.io/azure-disk
+#   fsType: ext4
+#   type: managed-premium
+#   extraParams:
+#     storageaccounttype: Premium_LRS
+#     kind: Managed
+#     cachingmode: ReadOnly
+
+enableTls: no
+tlsSecretName: pulsar-tls
+
+# secrets:
+  ## If you're providing your own certificates, please use this to add the certificates as secrets
+  ## key and certificate should start with -----BEGIN CERTIFICATE----- or
+  ## -----BEGIN RSA PRIVATE KEY----- # pragma: allowlist secret
+  ##
+  ## If you're using cert-manager, this is unneeded, as it will create the secret for you if it is not set
+  ##
+  ## Note: The key should not be in PKCS 8 format even though that is the format used by Pulsar
+  ##       The format will be converted by chart to PKCS 8. This is to maintain compatability with
+  ##       cert-manager
+  # key: |
+  # certificate: |
+  # caCertificate: |
+
+superUserRoles: superuser,admin,websocket,proxy
+proxyRoles: proxy
+tlsCaCert: ca-certificates.crt
+
+# Enable token-based authentication and authorization
+enableTokenAuth: no
+
+# Turn on anti affinity rules so that pods don't get scheduled on the same node
+# In development environments with a single node, this need to be disabled
+enableAntiAffinity: yes
+
+# Install Helm tests (run with helm test <release>)
+enableTests: no
+
+## which extra components to deploy
+extra:
+  # Pulsar proxy
+  proxy: yes
+  # Standalone functions worker
+  function: yes
+  # Standalone state storage
+  stateStorage: yes
+  # DNS on proxy
+  usedns: no
+  dnsOnProxy: no
+  # Bookkeeper auto-recovery
+  autoRecovery: no
+  # Bastion pod for administrative commands
+  bastion: yes
+  # Monitoring stack (prometheus, grafana, and dashboard)
+  monitoring: no
+  # Zoonavigator
+  zoonavigator: no
+
+## Which images to use
+image:
+  broker:
+    # If using tiered storage, use pulsar-all image for broker
+    repository: apachepulsar/pulsar
+    pullPolicy: IfNotPresent
+    tag: 2.5.0
+  stateStorage:
+    repository: kafkaesqueio/pulsar-all
+    pullPolicy: IfNotPresent
+    tag: 2.4.2-k2.1
+  function:
+    repository: apachepulsar/pulsar-all
+    pullPolicy: IfNotPresent
+    tag: 2.5.0
+  zookeeper:
+    repository: apachepulsar/pulsar
+    pullPolicy: IfNotPresent
+    tag: 2.5.0
+  bookkeeper:
+    repository: apachepulsar/pulsar
+    pullPolicy: IfNotPresent
+    tag: 2.5.0
+  proxy:
+    repository: kafkaesqueio/pulsar-all
+    pullPolicy: IfNotPresent
+    tag: 2.5.0-kesque-1.1
+  bastion:
+    repository: apachepulsar/pulsar
+    pullPolicy: IfNotPresent
+    tag: 2.5.0
+  dashboard:
+    tag: 2.5.0
+  grafana:
+    tag: 2.5.0
+  prometheus:
+    tag: v2.8.1
+
+
+## Tiered Storage
+##
+
+storageOffload: {}
+  ## General
+  ## =======
+  # bucket: <bucket>
+  # region: <region>
+  # maxBlockSizeInBytes: "64000000"
+  # readBufferSizeInBytes: "1000000"
+  ## The following are default values for the cluster. They can be changed
+  ## on each namespace.
+  # managedLedgerOffloadDeletionLagMs: "14400000"
+  # managedLedgerOffloadAutoTriggerSizeThresholdBytes: "1000000"
+
+  # For AWS S3
+  # ======
+  # You must create an IAM account with access to the bucket and
+  # generate keys for that account.
+  #
+  # driver: aws-s3
+  # accessKey: <access-key>
+  # accessSecret: <secret-key> # pragma: allowlist secret
+
+  # For S3 Compatible
+  # =================
+  # Need to create access and secret key for S3 compatible service
+  #
+  # driver: s3
+  # accessKey: <access-key>
+  # accessSecret: <secret-key> # pragma: allowlist secret
+  # serviceEndpoint: host:port
+
+  ## For Google Cloud Storage
+  ## ====================
+  ## You must create a service account that has access to the objects in GCP buckets
+  ## and upload its key as a JSON file to a secret.
+  ##
+  ## 1. Go to https://console.cloud.google.com/iam-admin/serviceaccounts
+  ## 2. Select your project.
+  ## 3. Create a new service account.
+  ## 4. Give the service account permission to access the bucket. For example,
+  ##    the "Storage Object Admin" role.
+  ## 5. Create a key for the service account and save it as a JSON file.
+  ## 6. Save the JSON file in a secret:
+  ##       kubectl create secret generic pulsar-gcp-sa-secret \
+  ##          --from-file=kafkaesque-223201-f12856532197.json \
+  ##          --namespace pulsar
+  ##
+  # driver: google-cloud-storage
+  # gcsServiceAccountSecret: pulsar-gcp-sa-secret # pragma: allowlist secret
+  # gcsServiceAccountJsonFile: kafkaesque-223201-f12856532197.json
+
+## Pulsar: Zookeeper cluster
+## templates/zookeeper-statefulset.yaml
+##
+zookeeper:
+  component: zookeeper
+  replicaCount: 1
+  updateStrategy:
+    type: RollingUpdate
+  podManagementPolicy: OrderedReady
+  # nodeSelector:
+    # cloud.google.com/gke-nodepool: default-pool
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+  tolerations: []
+  gracePeriod: 0
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 0.1
+  volumes:
+    data:
+      name: data
+      size: 2Gi
+      #storageClass:
+      #  type: gp2
+      #  provisioner: kubernetes.io/aws-ebs
+      # fsType: ext4
+      #  replication-type: regional-pd
+      #  zones: us-east1-b, us-east1-c, us-east1-d
+  ## Zookeeper configmap
+  ## templates/zookeeper-configmap.yaml
+  ##
+  configData:
+    PULSAR_MEM: "\"-Xms64m -Xmx128m -Dcom.sun.management.jmxremote -Djute.maxbuffer=10485760 -XX:+ParallelRefProcEnabled -XX:+UnlockExperimentalVMOptions -XX:+AggressiveOpts -XX:+DoEscapeAnalysis -XX:+DisableExplicitGC -XX:+PerfDisableSharedMem -Dzookeeper.forceSync=no\""
+    PULSAR_GC: "\"-XX:+UseG1GC -XX:MaxGCPauseMillis=10\""
+    PULSAR_LOG_LEVEL: "info"
+    PULSAR_LOG_ROOT_LEVEL: "info"
+    PULSAR_EXTRA_OPTS: "-Dpulsar.log.root.level=info"
+  ## Zookeeper service
+  ## templates/zookeeper-service.yaml
+  ##
+  service:
+    annotations:
+      service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+    ports:
+    - name: server
+      port: 2888
+    - name: leader-election
+      port: 3888
+    - name: stats
+      port: 2181
+  ## Zookeeper PodDisruptionBudget
+  ## templates/zookeeper-pdb.yaml
+  ##
+  pdb:
+    usePolicy: yes
+    maxUnavailable: 1
+
+## Pulsar Zookeeper metadata. The metadata will be deployed as
+## soon as the las zookeeper node is reachable. The deployment
+## of other components that depends o zookeeper, such as the
+## bookkeeper nodes, broker nodes, etc will only start to be
+## deployed when the zookeeper cluster is ready and with the
+## metadata deployed
+zookeeperMetadata:
+  component: zookeeper-metadata
+
+## Pulsar: Bookkeeper cluster
+## templates/bookkeeper-statefulset.yaml
+##
+bookkeeper:
+  component: bookkeeper
+  replicaCount: 1
+  updateStrategy:
+    type: RollingUpdate
+  podManagementPolicy: OrderedReady
+  enableStreamStorage: yes
+  # nodeSelector:
+    # cloud.google.com/gke-nodepool: default-pool
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+  tolarations: []
+  probe:
+    port: 3181
+    initial: 20
+    period: 10
+  gracePeriod: 0
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 0.2
+  volumes:
+    journal:
+      name: journal
+      size: 2Gi
+      # storageClass:
+      #   type: gp2
+      #   provisioner: kubernetes.io/aws-ebs
+      #   fsType: ext4
+    ledgers:
+      name: ledgers
+      size: 2Gi
+      # storageClass:
+      #   type: gp2
+      #   provisioner: kubernetes.io/aws-ebs
+      #   fsType: ext4
+  ## Bookkeeper configmap
+  ## templates/bookkeeper-configmap.yaml
+  ##
+  configData:
+    PULSAR_MEM: "\"-Xms128m -Xmx256m -XX:MaxDirectMemorySize=128m -Dio.netty.leakDetectionLevel=disabled -Dio.netty.recycler.linkCapacity=1024 -XX:+UseG1GC -XX:MaxGCPauseMillis=10 -XX:+ParallelRefProcEnabled -XX:+UnlockExperimentalVMOptions -XX:+AggressiveOpts -XX:+DoEscapeAnalysis -XX:ParallelGCThreads=32 -XX:ConcGCThreads=32 -XX:G1NewSizePercent=50 -XX:+DisableExplicitGC -XX:-ResizePLAB -XX:+ExitOnOutOfMemoryError -XX:+PerfDisableSharedMem -XX:+PrintGCDetails -XX:+PrintGCTimeStamps -XX:+PrintGCApplicationStoppedTime -XX:+PrintHeapAtGC -verbosegc -XX:G1LogLevel=finest\""
+    PULSAR_LOG_LEVEL: "info"
+    PULSAR_LOG_ROOT_LEVEL: "info"
+    PULSAR_EXTRA_OPTS: "-Dpulsar.log.root.level=info"
+    # dbStorage_writeCacheMaxSizeMb: "2048"
+    # dbStorage_readAheadCacheMaxSizeMb: "2048"
+    # journalMaxSizeMB: "2048"
+    statsProviderClass: org.apache.bookkeeper.stats.prometheus.PrometheusMetricsProvider
+    useHostNameAsBookieID: "true"
+  ## Bookkeeper configmap
+  ## templates/bookkeeper-service.yaml
+  ##
+  service:
+    annotations:
+      publishNotReadyAddresses: "true"
+    ports:
+    - name: server
+      port: 3181
+  ## Bookkeeper PodDisruptionBudget
+  ## templates/bookkeeper-pdb.yaml
+  ##
+  pdb:
+    usePolicy: yes
+    maxUnavailable: 1
+
+## Pulsar: Broker cluster
+## templates/broker-deployment.yaml
+##
+broker:
+  component: broker
+  replicaCount: 1
+  # nodeSelector:
+    # cloud.google.com/gke-nodepool: default-pool
+    #
+  #preferredZone: "us-east1-c"
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+  tolarations: []
+  gracePeriod: 0
+  functionsWorkerEnabled: no
+  probe:
+    port: 8080
+    initial: 30
+    period: 10
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 0.2
+  ## Broker configmap
+  ## templates/broker-configmap.yaml
+  ##
+  configData:
+    PULSAR_MEM: "\"-Xms128m -Xmx256m -XX:MaxDirectMemorySize=128m -Dio.netty.leakDetectionLevel=disabled -Dio.netty.recycler.linkCapacity=1024 -XX:+ParallelRefProcEnabled -XX:+UnlockExperimentalVMOptions -XX:+AggressiveOpts -XX:+DoEscapeAnalysis -XX:ParallelGCThreads=32 -XX:ConcGCThreads=32 -XX:G1NewSizePercent=50 -XX:+DisableExplicitGC -XX:-ResizePLAB -XX:+ExitOnOutOfMemoryError -XX:+PerfDisableSharedMem\""
+    PULSAR_GC: "\"-XX:+UseG1GC -XX:MaxGCPauseMillis=10\""
+    PULSAR_LOG_LEVEL: "info"
+    PULSAR_LOG_ROOT_LEVEL: "info"
+    PULSAR_EXTRA_OPTS: "-Dpulsar.log.root.level=info"
+    managedLedgerDefaultEnsembleSize: "1"
+    managedLedgerDefaultWriteQuorum: "1"
+    managedLedgerDefaultAckQuorum: "1"
+    deduplicationEnabled: "true"
+    exposeTopicLevelMetricsInPrometheus: "true"
+    backlogQuotaDefaultLimitGB: "1"
+    backlogQuotaDefaultRetentionPolicy: "producer_exception"
+    maxProducersPerTopic: "5"
+    maxConsumersPerTopic: "5"
+    maxConsumersPerSubscription: "5"
+  ## Broker service
+  ## templates/broker-service.yaml
+  ##
+  service:
+    annotations: {}
+    type: ClusterIP
+    headless: no
+    ports:
+    - name: http
+      port: 8080
+    - name: pulsar
+      port: 6650
+    - name: https
+      port: 8443
+    - name: pulsarssl
+      port: 6651
+  ## Broker PodDisruptionBudget
+  ## templates/broker-pdb.yaml
+  ##
+  pdb:
+    usePolicy: yes
+    maxUnavailable: 1
+
+function:
+  component: function
+  replicaCount: 1
+  functionReplicaCount: 1
+  usePython3: no
+  updateStrategy:
+    type: RollingUpdate
+  podManagementPolicy: OrderedReady
+  probe:
+    port: 6750
+    initial: 40
+    period: 10
+  runtime: "process"
+  enableStateStorage: yes
+  #preferredZone: "us-east1-c"
+  # nodeSelector:
+    # cloud.google.com/gke-nodepool: default-pool
+  annotations:
+    prometheus.io/scrape: "false"
+    prometheus.io/port: "8080"
+  tolarations: []
+  gracePeriod: 0
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 0.2
+  volumes:
+    data:
+      name: logs
+      size: 1Gi
+      # storageClass:
+      #  type: gp2
+      #  provisioner: kubernetes.io/aws-ebs
+      #  fsType: ext4
+      #  replication-type: regional-pd
+      #  zones: us-east1-b, us-east1-c, us-east1-d
+  ## Function configmap
+  ## templates/function-configmap.yaml
+  ##
+  configData:
+    PULSAR_MEM: "\"-Xms128m -Xmx256m -XX:MaxDirectMemorySize=128m -Dio.netty.leakDetectionLevel=disabled -Dio.netty.recycler.linkCapacity=1024 -XX:+ParallelRefProcEnabled -XX:+UnlockExperimentalVMOptions -XX:+AggressiveOpts -XX:+DoEscapeAnalysis -XX:ParallelGCThreads=32 -XX:ConcGCThreads=32 -XX:G1NewSizePercent=50 -XX:+DisableExplicitGC -XX:-ResizePLAB -XX:+ExitOnOutOfMemoryError -XX:+PerfDisableSharedMem\""
+    PULSAR_GC: "\"-XX:+UseG1GC -XX:MaxGCPauseMillis=10\""
+    PULSAR_LOG_LEVEL: "info"
+    PULSAR_LOG_ROOT_LEVEL: "info"
+    PULSAR_EXTRA_OPTS: "-Dpulsar.log.root.level=info"
+  ## Function service
+  ## templates/function-service.yaml
+  ##
+  service:
+    annotations: {}
+    type: ClusterIP
+    headless: yes
+    ports:
+    - name: http
+      port: 6750
+    - name: https
+      port: 6751
+  ## Function PodDisruptionBudget
+  ## templates/function-pdb.yaml
+  ##
+  pdb:
+    usePolicy: yes
+    maxUnavailable: 1
+
+stateStorage:
+  component: statestorage
+  replicaCount: 1
+  numStorageContainers: 4
+  updateStrategy:
+    type: RollingUpdate
+  podManagementPolicy: OrderedReady
+  probe:
+    port: 4181
+    initial: 10
+    period: 10
+  #preferredZone: "us-east1-c"
+  # nodeSelector:
+    # cloud.google.com/gke-nodepool: default-pool
+  annotations:
+    prometheus.io/scrape: "false"
+    prometheus.io/port: "8080"
+  tolarations: []
+  gracePeriod: 0
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 0.2
+  volumes:
+    data:
+      name: data
+      size: 2Gi
+      #storageClass:
+      #  type: pd-ssd
+      #  provisioner: kubernetes.io/gce-pd
+      #  fsType: ext4
+      #  replication-type: regional-pd
+      #  zones: us-east1-b, us-east1-c, us-east1-d
+  ## StateStorage configmap
+  ## templates/state-configmap.yaml
+  ##
+  configData:
+    PULSAR_MEM: "\"-Xms256m -Xmx512m -XX:MaxDirectMemorySize=256m\""
+    PULSAR_LOG_LEVEL: "info"
+    PULSAR_LOG_ROOT_LEVEL: "info"
+    PULSAR_EXTRA_OPTS: "-Dpulsar.log.root.level=info"
+  ## Function service
+  ## templates/state-service.yaml
+  ##
+  service:
+    annotations: {}
+    type: ClusterIP
+    headless: yes
+    ports:
+    - name: bkstate
+      port: 4181
+
+
+tokenServer:
+  allowedRoles: superuser,token-creation
+
+## Pulsar Extra: Proxy
+## templates/proxy-deployment.yaml
+##
+proxy:
+  component: proxy
+  replicaCount: 1
+  disableZookeeperDiscovery: yes
+  # nodeSelector:
+    # cloud.google.com/gke-nodepool: default-pool
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+  tolarations: []
+  #preferredZone: "us-east1-c"
+  gracePeriod: 0
+  probe:
+    port: 8080
+    initial: 10
+    period: 10
+  # Resources for the main Pulsar proxy
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 0.1
+  # Resources for the websocket proxy
+  wsResources:
+    requests:
+      memory: 64Mi
+      cpu: 0.1
+  ## Proxy configmap
+  ## templates/proxy-configmap.yaml
+  ##
+  configData:
+    PULSAR_MEM: "\"-Xms64m -Xmx128m -XX:MaxDirectMemorySize=64m\""
+    numHttpServerThreads: "10"
+    PULSAR_LOG_LEVEL: "info"
+    PULSAR_LOG_ROOT_LEVEL: "info"
+    PULSAR_EXTRA_OPTS: "-Dpulsar.log.root.level=info"
+  wsProxyPort: 8000
+  wsProxyPortTls: 8001
+  ## Proxy loadbalancer service
+  ## templates/proxy-service.yaml
+  ##
+  # service:
+  #   annotations: {}
+  #   type: LoadBalancer
+  #   ports:
+  #   - name: http
+  #     port: 8080
+  #     nodePort: 30001
+  #     protocol: TCP
+  #   - name: pulsar
+  #     port: 6650
+  #     protocol: TCP
+  #     nodePort: 30002
+  #   - name: ws
+  #     port: 8000
+  #     protocol: TCP
+  #     nodePort: 30003
+
+  ## Proxy cluster service
+  ## templates/proxy-service.yaml
+  ##
+  service:
+    annotations: {}
+    type: NodePort
+    ports:
+    - name: http
+      port: 8080
+      nodePort: 30001
+      protocol: TCP
+    - name: tcp
+      port: 6650
+      nodePort: 30002
+      protocol: TCP
+
+  ## Proxy PodDisruptionBudget
+  ## templates/proxy-pdb.yaml
+  ##
+  pdb:
+    usePolicy: yes
+    maxUnavailable: 1
+
+## Pulsar Extra:  DNS on proxy RBAC
+## templates/dns-rbac.yaml
+## templates/dns-deployment.yaml
+dns:
+  component: dns
+  provider: aws
+  domainFilter: example.com
+  hostAnnotations:
+
+## Pulsar Extra: Bookkeeper auto-recovery
+## templates/autorecovery-deployment.yaml
+##
+autoRecovery:
+  component: autorecovery
+  replicaCount: 1
+  #nodeSelector:
+  #  cloud.google.com/gke-nodepool: default-pool
+  annotations: {}
+  tolarations: []
+  gracePeriod: 0
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 0.3
+  ## Bookkeeper auto-recovery configmap
+  ## templates/autorecovery-configmap.yaml
+  ##
+  configData:
+    PULSAR_MEM: "\" -Xms512m -Xmx512m \""
+    PULSAR_LOG_LEVEL: "info"
+    PULSAR_LOG_ROOT_LEVEL: "info"
+    PULSAR_EXTRA_OPTS: "-Dpulsar.log.root.level=info"
+## Pulsar Extra: Dashboard
+## templates/dashboard-deployment.yaml
+##
+dashboard:
+  component: dashboard
+  replicaCount: 1
+  # nodeSelector:
+    # cloud.google.com/gke-nodepool: default-pool
+  annotations: {}
+  tolarations: []
+  gracePeriod: 0
+  resources:
+    requests:
+      memory: 1024Mi
+      cpu: 1
+  image:
+    repository: apachepulsar/pulsar-dashboard
+    pullPolicy: IfNotPresent
+  ## Dashboard service
+  ## templates/dashboard-service.yaml
+  ##
+  service:
+    annotations: {}
+    ports:
+    - name: server
+      port: 80
+
+## Pulsar Extra: Zoonavigator
+## templates/zoonavigator-deployment.yaml
+##
+zoonavigator:
+  component: zoonavigator
+  replicaCount: 1
+  autoConnect: true
+  # nodeSelector:
+    # cloud.google.com/gke-nodepool: default-pool
+  annotations: {}
+  tolarations: []
+  gracePeriod: 0
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 0.2
+  image:
+    repository:
+      web: elkozmon/zoonavigator-web
+      api: elkozmon/zoonavigator-api
+    pullPolicy: IfNotPresent
+
+  ## Zoonavigator service
+  ## templates/zoonavigator-service.yaml
+  ##
+  service:
+    annotations: {}
+    ports:
+    - name: server
+      port: 8001
+
+  ## Dashboard service
+  ## templates/dashboard-service.yaml
+  ##
+  service:
+    annotations: {}
+    ports:
+    - name: server
+      port: 8000
+    - name: jolokia
+      port: 8778
+
+
+## Pulsar Extra: Bastion
+## templates/bastion-deployment.yaml
+##
+bastion:
+  component: bastion
+  replicaCount: 1
+  # nodeSelector:
+    # cloud.google.com/gke-nodepool: default-pool
+  annotations: {}
+  tolarations: []
+  gracePeriod: 0
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 0.1
+  ## Bastion configmap
+  ## templates/bastion-configmap.yaml
+  ##
+  configData:
+    PULSAR_MEM: "\"-Xms128m -Xmx256m -XX:MaxDirectMemorySize=128m\""
+    PULSAR_LOG_LEVEL: "info"
+    PULSAR_LOG_ROOT_LEVEL: "info"
+    PULSAR_EXTRA_OPTS: "-Dpulsar.log.root.level=info"
+## Monitoring Stack: Prometheus
+## templates/prometheus-deployment.yaml
+##
+prometheus:
+  component: prometheus
+  replicaCount: 1
+  # nodeSelector:
+    # cloud.google.com/gke-nodepool: default-pool
+  annotations: {}
+  tolarations: []
+  gracePeriod: 0
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 0.5
+  image:
+    repository: prom/prometheus
+    pullPolicy: IfNotPresent
+  volumes:
+    data:
+      name: data
+      size: 5Gi
+      # storageClass:
+      #   type: gp2
+      #   provisioner: kubernetes.io/aws-ebs
+      #   fsType: ext4
+  ## Prometheus service
+  ## templates/prometheus-service.yaml
+  ##
+  service:
+    annotations: {}
+    ports:
+    - name: server
+      port: 9090
+
+## Monitoring Stack: Grafana
+## templates/grafana-deployment.yaml
+##
+grafana:
+  component: grafana
+  replicaCount: 1
+  # nodeSelector:
+    # cloud.google.com/gke-nodepool: default-pool
+  annotations: {}
+  tolarations: []
+  gracePeriod: 0
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 0.25
+  image:
+    repository: apachepulsar/pulsar-grafana
+    pullPolicy: IfNotPresent
+  ## Grafana service
+  ## templates/grafana-service.yaml
+  ##
+  service:
+    annotations: {}
+    ports:
+    - name: server
+      port: 3000
+

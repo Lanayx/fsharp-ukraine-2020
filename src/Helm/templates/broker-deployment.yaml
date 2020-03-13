@@ -1,0 +1,200 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+#
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{{ template "pulsar.fullname" . }}-{{ .Values.broker.component }}"
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ template "pulsar.name" . }}
+    chart: {{ template "pulsar.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+    component: {{ .Values.broker.component }}
+    cluster: {{ template "pulsar.fullname" . }}
+spec:
+  replicas: {{ .Values.broker.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ template "pulsar.name" . }}
+      release: {{ .Release.Name }}
+      component: {{ .Values.broker.component }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "pulsar.name" . }}
+        release: {{ .Release.Name }}
+        component: {{ .Values.broker.component }}
+        cluster: {{ template "pulsar.fullname" . }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/broker-configmap.yaml") . | sha256sum }}
+{{ toYaml .Values.broker.annotations | indent 8 }}
+    spec:
+    {{- if (.Values.nodeSelector) and (eq .Values.broker.nodeSelector false) }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 8 }}
+    {{- end }}
+    {{- if .Values.broker.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.broker.nodeSelector | indent 8 }}
+    {{- end }}
+    {{- if .Values.broker.tolerations }}
+      tolerations:
+{{ toYaml .Values.broker.tolerations | indent 8 }}
+    {{- end }}
+      affinity:
+        {{- if .Values.broker.preferredZone }}
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            preference:
+              matchExpressions:
+              - key: failure-domain.beta.kubernetes.io
+                operator: In
+                values:
+                - {{ .Values.broker.preferredZone }} 
+        {{- end }}
+        {{- if .Values.enableAntiAffinity }}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: "app"
+                operator: In
+                values:
+                - "{{ template "pulsar.name" . }}"
+              - key: "release"
+                operator: In
+                values:
+                - {{ .Release.Name }}
+              - key: "component"
+                operator: In
+                values:
+                - {{ .Values.broker.component }}
+            topologyKey: "kubernetes.io/hostname"
+        {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.broker.gracePeriod }}
+      volumes:
+        {{- if .Values.enableTls }}
+        - name: certs
+          secret:
+            secretName: "{{ .Values.tlsSecretName }}" 
+        {{- end }}
+        {{- if .Values.enableTokenAuth }}
+        - name: token-public-key
+          secret:
+            secretName: token-public-key
+        - name: token-superuser
+          secret:
+            secretName: token-superuser
+        {{- end }}
+        {{- if .Values.storageOffload.driver }}
+        {{- if eq .Values.storageOffload.driver "google-cloud-storage" }}
+        - name: gcp-service-account
+          secret:
+            secretName: {{ .Values.storageOffload.gcsServiceAccountSecret }}
+        {{- end }}
+        {{- end }}
+      initContainers:
+      # This init container will wait for bookkeeper to be ready before
+      # deploying the broker
+      - name: wait-bookkeeper-ready
+        image: "{{ .Values.image.broker.repository }}:{{ .Values.image.broker.tag }}"
+        imagePullPolicy: {{ .Values.image.broker.pullPolicy }}
+        command: ["sh", "-c"]
+        args:
+          - >-
+            until nslookup {{ template "pulsar.fullname" . }}-{{ .Values.bookkeeper.component }}-{{ add (.Values.bookkeeper.replicaCount | int) -1 }}.{{ template "pulsar.fullname" . }}-{{ .Values.bookkeeper.component }}.{{ .Release.Namespace }}; do
+              sleep 3;
+            done;
+      containers:
+      - name: "{{ template "pulsar.fullname" . }}-{{ .Values.broker.component }}"
+        image: "{{ .Values.image.broker.repository }}:{{ .Values.image.broker.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        {{- if .Values.broker.probe }}
+        readinessProbe:
+          exec:
+            command:
+            - /pulsar/bin/pulsar-admin
+            - brokers 
+            - healthcheck
+          initialDelaySeconds: {{ .Values.broker.probe.initial }} 
+          periodSeconds:  {{ .Values.broker.probe.period }} 
+        livenessProbe:
+          exec:
+            command:
+            - /pulsar/bin/pulsar-admin
+            - brokers 
+            - healthcheck
+          initialDelaySeconds: {{ .Values.broker.probe.initial }} 
+          periodSeconds: {{ .Values.broker.probe.period }} 
+        {{- end }}
+      {{- if .Values.broker.resources }}
+        resources:
+{{ toYaml .Values.broker.resources | indent 10 }}
+      {{- end }}
+        command: ["sh", "-c"]
+        args:
+        - >
+          bin/apply-config-from-env.py conf/broker.conf &&
+          bin/apply-config-from-env.py conf/pulsar_env.sh &&
+          bin/apply-config-from-env.py conf/client.conf &&
+          bin/gen-yml-from-env.py conf/functions_worker.yml &&
+          {{- if .Values.enableTls }}
+          openssl pkcs8 -topk8 -inform PEM -outform PEM -in /pulsar/certs/tls.key -out /pulsar/tls-pk8.key -nocrypt &&
+          {{- end }}
+          {{- if .Values.enableTokenAuth }}
+          cat /pulsar/token-superuser/superuser.jwt | tr -d '\n' > /pulsar/token-superuser-stripped.jwt &&
+          {{- end }}
+          bin/pulsar broker
+        ports:
+        - name: http
+          containerPort: 8080
+        - name: pulsar
+          containerPort: 6650
+        volumeMounts:
+          {{- if .Values.enableTls }}
+          - name: certs
+            readOnly: true
+            mountPath: /pulsar/certs
+          {{- end }}
+          {{- if .Values.enableTokenAuth }}
+          - mountPath: "/pulsar/token-public-key"
+            name: token-public-key
+            readOnly: true
+          - mountPath: "/pulsar/token-superuser"
+            name: token-superuser
+            readOnly: true
+          {{- end }}
+          {{- if .Values.storageOffload.driver }}
+          {{- if eq .Values.storageOffload.driver "google-cloud-storage" }}
+          - name: gcp-service-account
+            readOnly: true
+            mountPath: /pulsar/gcp-service-account
+          {{- end }}
+          {{- end }}
+        envFrom:
+        - configMapRef:
+            name: "{{ template "pulsar.fullname" . }}-{{ .Values.broker.component }}"
+        env:
+        - name: advertisedAddress
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
