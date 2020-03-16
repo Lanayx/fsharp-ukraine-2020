@@ -22,6 +22,12 @@ open Pulsar.Client.Common
 
 let client = PulsarClientBuilder().ServiceUrl("pulsar://my-pulsar-cluster:30002").Build()
 let commandTopic = Dns.GetHostName() + "InventoryCommand"
+let fakeReader = 
+    ReaderBuilder(client)
+        .ReaderName("Fake reader")
+        .StartMessageId(MessageId.Earliest)
+        .Topic(commandTopic)
+        .CreateAsync().GetAwaiter().GetResult()
 
 let producer = 
     ProducerBuilder(client)
@@ -170,6 +176,7 @@ let configureServices (services : IServiceCollection) =
             let host = Dns.GetHostName()
             let stopApp() =
                 logger.LogCritical("{0} stopped consuming", host)
+                client.CloseAsync().GetAwaiter().GetResult()
                 appLifetime.StopApplication()
             new PulsarConsumer(client, logger, stopApp, host, handler, commandTopic)
         ) |> ignore
