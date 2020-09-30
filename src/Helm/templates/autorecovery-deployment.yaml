@@ -47,7 +47,10 @@ spec:
       annotations:
 {{ toYaml .Values.autoRecovery.annotations | indent 8 }}
     spec:
-    {{- if (.Values.nodeSelector) and (eq .Values.autoRecover.nodeSelector false) }}
+      {{- if .Values.priorityClass.enabled }}
+      priorityClassName: pulsar-priority
+      {{- end }}
+    {{- if and (.Values.nodeSelector) (not .Values.autoRecovery.nodeSelector) }}
       nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 8 }}
     {{- end }}
@@ -60,8 +63,33 @@ spec:
 {{ toYaml .Values.autoRecovery.tolerations | indent 8 }}
     {{- end }}
       affinity:
+      {{- if .Values.autoRecovery.nodeAffinity }}
+        nodeAffinity:
+{{ toYaml .Values.autoRecovery.nodeAffinity | indent 10 }}
+        {{- end }}
         {{- if .Values.enableAntiAffinity }}
         podAntiAffinity:
+          {{- if .Values.antiAffinity.host.enabled }}
+          {{- if eq .Values.antiAffinity.host.mode "preferred" }}
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: "app"
+                  operator: In
+                  values:
+                  - "{{ template "pulsar.name" . }}"
+                - key: "release"
+                  operator: In
+                  values:
+                  - {{ .Release.Name }}
+                - key: "component"
+                  operator: In
+                  values:
+                  - {{ .Values.autoRecovery.component }}
+              topologyKey: "kubernetes.io/hostname"
+          {{- else }}
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
               matchExpressions:
@@ -76,8 +104,30 @@ spec:
               - key: "component"
                 operator: In
                 values:
-                - {{ .Values.bookkeeper.component }}
+                - {{ .Values.autoRecovery.component }}
             topologyKey: "kubernetes.io/hostname"
+          {{- end }}
+          {{- end }}
+          {{- if .Values.antiAffinity.zone.enabled }}
+          preferredDuringSchedulingIgnoredDuringExecution: 
+          - weight: 100  
+            podAffinityTerm:
+              topologyKey: failure-domain.beta.kubernetes.io/zone
+              labelSelector:
+                matchExpressions:
+                - key: "app"
+                  operator: In
+                  values:
+                  - "{{ template "pulsar.name" . }}"
+                - key: "release"
+                  operator: In
+                  values:
+                  - {{ .Release.Name }}
+                - key: "component"
+                  operator: In
+                  values:
+                  - {{ .Values.autoRecovery.component }}
+          {{- end }}
         {{- end }}
       terminationGracePeriodSeconds: {{ .Values.autoRecovery.gracePeriod }}
       initContainers:
@@ -85,17 +135,27 @@ spec:
       # deploying the bookies
       - name: wait-zookeeper-ready
         image: "{{ .Values.image.bookkeeper.repository }}:{{ .Values.image.bookkeeper.tag }}"
-        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        imagePullPolicy: {{ .Values.image.bookkeeper.pullPolicy }}
         command: ["sh", "-c"]
         args:
           - >-
             until bin/pulsar zookeeper-shell -server {{ template "pulsar.fullname" . }}-{{ .Values.zookeeper.component }} ls /admin/clusters | grep "^\[.*{{ template "pulsar.fullname" . }}.*\]"; do
               sleep 3;
             done;
+      volumes:
+      {{- if and .Values.enableTls .Values.tls.zookeeper.enabled}}
+      - name: certs
+        secret:
+          secretName: "{{ .Values.tlsSecretName }}"
+      - name: certconverter
+        configMap: 
+          name: "{{ template "pulsar.fullname" . }}-certconverter-configmap"
+          defaultMode: 0755
+      {{- end }}
       containers:
       - name: "{{ template "pulsar.fullname" . }}-{{ .Values.autoRecovery.component }}"
         image: "{{ .Values.image.bookkeeper.repository }}:{{ .Values.image.bookkeeper.tag }}"
-        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        imagePullPolicy: {{ .Values.image.bookkeeper.pullPolicy }}
       {{- if .Values.autoRecovery.resources }}
         resources:
 {{ toYaml .Values.autoRecovery.resources | indent 10 }}
@@ -104,7 +164,19 @@ spec:
         args:
         - >
           bin/apply-config-from-env.py conf/bookkeeper.conf &&
-          bin/bookkeeper autorecovery
+          bin/apply-config-from-env.py conf/bkenv.sh &&
+          {{- if and .Values.enableTls .Values.tls.zookeeper.enabled }}
+          /pulsar/tools/certconverter.sh &&
+          {{- end }}
+          exec bin/bookkeeper autorecovery
+        {{- if and .Values.enableTls .Values.tls.zookeeper.enabled}}
+        volumeMounts:
+        - name: certs
+          readOnly: true
+          mountPath: /pulsar/certs
+        - name: certconverter
+          mountPath: /pulsar/tools
+        {{- end }}
         envFrom:
         - configMapRef:
             name: "{{ template "pulsar.fullname" . }}-{{ .Values.autoRecovery.component }}"

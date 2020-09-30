@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-
+{{- if .Values.extra.broker }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,6 +36,10 @@ spec:
       app: {{ template "pulsar.name" . }}
       release: {{ .Release.Name }}
       component: {{ .Values.broker.component }}
+{{- if .Values.broker.updateStrategy }}
+  strategy:
+{{ toYaml .Values.broker.updateStrategy | indent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:
@@ -44,10 +48,18 @@ spec:
         component: {{ .Values.broker.component }}
         cluster: {{ template "pulsar.fullname" . }}
       annotations:
+      {{- if .Values.restartOnConfigMapChange.enabled }}
         checksum/config: {{ include (print $.Template.BasePath "/broker-configmap.yaml") . | sha256sum }}
+      {{- end }}
 {{ toYaml .Values.broker.annotations | indent 8 }}
     spec:
-    {{- if (.Values.nodeSelector) and (eq .Values.broker.nodeSelector false) }}
+      {{- if .Values.priorityClass.enabled }}
+      priorityClassName: pulsar-priority
+      {{- end }}
+      {{- if .Values.broker.serviceAccountName }}
+      serviceAccountName: {{ .Values.broker.serviceAccountName }}
+      {{- end }}
+    {{- if and (.Values.nodeSelector) (not .Values.broker.nodeSelector) }}
       nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 8 }}
     {{- end }}
@@ -60,19 +72,33 @@ spec:
 {{ toYaml .Values.broker.tolerations | indent 8 }}
     {{- end }}
       affinity:
-        {{- if .Values.broker.preferredZone }}
+        {{- if .Values.broker.nodeAffinity }}
         nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 1
-            preference:
-              matchExpressions:
-              - key: failure-domain.beta.kubernetes.io
-                operator: In
-                values:
-                - {{ .Values.broker.preferredZone }} 
+{{ toYaml .Values.broker.nodeAffinity | indent 10 }}
         {{- end }}
         {{- if .Values.enableAntiAffinity }}
         podAntiAffinity:
+          {{- if .Values.antiAffinity.host.enabled }}
+          {{- if eq .Values.antiAffinity.host.mode "preferred" }}
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: "app"
+                  operator: In
+                  values:
+                  - "{{ template "pulsar.name" . }}"
+                - key: "release"
+                  operator: In
+                  values:
+                  - {{ .Release.Name }}
+                - key: "component"
+                  operator: In
+                  values:
+                  - {{ .Values.broker.component }}
+              topologyKey: "kubernetes.io/hostname"
+          {{- else }}
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
               matchExpressions:
@@ -89,13 +115,45 @@ spec:
                 values:
                 - {{ .Values.broker.component }}
             topologyKey: "kubernetes.io/hostname"
+          {{- end }}
+          {{- end }}
+          {{- if .Values.antiAffinity.zone.enabled }}
+          preferredDuringSchedulingIgnoredDuringExecution: 
+          - weight: 100  
+            podAffinityTerm:
+              topologyKey: failure-domain.beta.kubernetes.io/zone
+              labelSelector:
+                matchExpressions:
+                - key: "app"
+                  operator: In
+                  values:
+                  - "{{ template "pulsar.name" . }}"
+                - key: "release"
+                  operator: In
+                  values:
+                  - {{ .Release.Name }}
+                - key: "component"
+                  operator: In
+                  values:
+                  - {{ .Values.broker.component }}
+          {{- end }}  
         {{- end }}
       terminationGracePeriodSeconds: {{ .Values.broker.gracePeriod }}
       volumes:
+        - name: health
+          configMap: 
+            name: "{{ template "pulsar.fullname" . }}-health"
+            defaultMode: 0755
         {{- if .Values.enableTls }}
         - name: certs
           secret:
-            secretName: "{{ .Values.tlsSecretName }}" 
+            secretName: "{{ .Values.tlsSecretName }}"
+          {{- if .Values.tls.zookeeper.enabled}}
+        - name: certconverter
+          configMap: 
+            name: "{{ template "pulsar.fullname" . }}-certconverter-configmap"
+            defaultMode: 0755
+          {{- end }}
         {{- end }}
         {{- if .Values.enableTokenAuth }}
         - name: token-public-key
@@ -112,6 +170,10 @@ spec:
             secretName: {{ .Values.storageOffload.gcsServiceAccountSecret }}
         {{- end }}
         {{- end }}
+        {{- if .Values.broker.initContainer }}
+        - name: lib-data
+          emptyDir: {}
+        {{- end }}
       initContainers:
       # This init container will wait for bookkeeper to be ready before
       # deploying the broker
@@ -124,25 +186,37 @@ spec:
             until nslookup {{ template "pulsar.fullname" . }}-{{ .Values.bookkeeper.component }}-{{ add (.Values.bookkeeper.replicaCount | int) -1 }}.{{ template "pulsar.fullname" . }}-{{ .Values.bookkeeper.component }}.{{ .Release.Namespace }}; do
               sleep 3;
             done;
+      {{- if .Values.broker.initContainer }}
+      - name: add-libs
+        image: "{{ .Values.broker.initContainer.repository }}:{{ .Values.broker.initContainer.tag }}"
+        imagePullPolicy: "{{ .Values.broker.initContainer.pullPolicy }}"
+        {{- if  .Values.broker.initContainer.command }}
+        command:
+{{ toYaml .Values.broker.initContainer.command | indent 10 }}
+        {{- end }}
+        {{- if  .Values.broker.initContainer.args }}
+        args:
+{{ toYaml .Values.broker.initContainer.args | indent 10 }}
+        {{- end }}
+        volumeMounts:
+          - name: lib-data
+            mountPath: {{ .Values.broker.initContainer.emptyDirPath }}
+      {{- end }}
       containers:
       - name: "{{ template "pulsar.fullname" . }}-{{ .Values.broker.component }}"
         image: "{{ .Values.image.broker.repository }}:{{ .Values.image.broker.tag }}"
-        imagePullPolicy: {{ .Values.image.pullPolicy }}
-        {{- if .Values.broker.probe }}
+        imagePullPolicy: {{ .Values.image.broker.pullPolicy }}
+        {{- if .Values.broker.probe.enabled }}
         readinessProbe:
           exec:
             command:
-            - /pulsar/bin/pulsar-admin
-            - brokers 
-            - healthcheck
+            - "/pulsar/health/broker_health_check.sh"
           initialDelaySeconds: {{ .Values.broker.probe.initial }} 
           periodSeconds:  {{ .Values.broker.probe.period }} 
         livenessProbe:
           exec:
             command:
-            - /pulsar/bin/pulsar-admin
-            - brokers 
-            - healthcheck
+            - "/pulsar/health/broker_health_check.sh"
           initialDelaySeconds: {{ .Values.broker.probe.initial }} 
           periodSeconds: {{ .Values.broker.probe.period }} 
         {{- end }}
@@ -163,17 +237,30 @@ spec:
           {{- if .Values.enableTokenAuth }}
           cat /pulsar/token-superuser/superuser.jwt | tr -d '\n' > /pulsar/token-superuser-stripped.jwt &&
           {{- end }}
-          bin/pulsar broker
+          {{- if and .Values.enableTls .Values.tls.zookeeper.enabled }}
+          /pulsar/tools/certconverter.sh &&
+          {{- end }}
+          exec bin/pulsar broker
         ports:
         - name: http
           containerPort: 8080
         - name: pulsar
           containerPort: 6650
         volumeMounts:
+          - name: health
+            mountPath: /pulsar/health
           {{- if .Values.enableTls }}
           - name: certs
             readOnly: true
             mountPath: /pulsar/certs
+            {{- if .Values.tls.zookeeper.enabled}}
+          - name: certconverter
+            mountPath: /pulsar/tools
+            {{- end }}
+          {{- end }}
+          {{- if .Values.broker.initContainer }}
+          - name: lib-data
+            mountPath: {{ .Values.broker.initContainer.emptyDirPath }}
           {{- end }}
           {{- if .Values.enableTokenAuth }}
           - mountPath: "/pulsar/token-public-key"
@@ -198,3 +285,4 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
+{{- end }}

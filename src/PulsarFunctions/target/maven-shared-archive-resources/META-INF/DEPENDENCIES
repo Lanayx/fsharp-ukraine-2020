@@ -21,11 +21,11 @@ From: 'an unknown organization'
     License: GNU General Public License, version 2 (GPL2), with the classpath exception  (http://www.gnu.org/software/classpath/license.html)    License: The MIT License  (http://opensource.org/licenses/MIT)
 
 From: 'Apache Software Foundation' (http://www.apache.org/)
-  - Pulsar Client :: API (https://github.com/apache/pulsar/pulsar-client-api) org.apache.pulsar:pulsar-client-api:jar:2.5.0
+  - Pulsar Client :: API (https://github.com/apache/pulsar/pulsar-client-api) org.apache.pulsar:pulsar-client-api:jar:2.6.0
     License: Apache License, Version 2.0  (https://www.apache.org/licenses/LICENSE-2.0.txt)
-  - Pulsar Functions :: API (https://github.com/apache/pulsar/pulsar-functions/pulsar-functions-api) org.apache.pulsar:pulsar-functions-api:jar:2.5.0
+  - Pulsar Functions :: API (https://github.com/apache/pulsar/pulsar-functions/pulsar-functions-api) org.apache.pulsar:pulsar-functions-api:jar:2.6.0
     License: Apache License, Version 2.0  (https://www.apache.org/licenses/LICENSE-2.0.txt)
-  - Pulsar Transaction :: Common (https://github.com/apache/pulsar/pulsar-transaction-parent/pulsar-transaction-common) org.apache.pulsar:pulsar-transaction-common:jar:2.5.0
+  - Pulsar Transaction :: Common (https://github.com/apache/pulsar/pulsar-transaction-parent/pulsar-transaction-common) org.apache.pulsar:pulsar-transaction-common:jar:2.6.0
     License: Apache License, Version 2.0  (https://www.apache.org/licenses/LICENSE-2.0.txt)
 
 From: 'Codehaus' (http://codehaus.org)

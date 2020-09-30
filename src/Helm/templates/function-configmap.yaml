@@ -31,7 +31,16 @@ metadata:
     cluster: {{ template "pulsar.fullname" . }}
 data:
   functions_worker.yml: |-
-    configurationStoreServers: {{- $global := . }} {{ range $i, $e := until (.Values.zookeeper.replicaCount | int) }}{{ if ne $i 0 }},{{ end }}{{ template "pulsar.fullname" $global }}-{{ $global.Values.zookeeper.component }}-{{ printf "%d" $i }}.{{ template "pulsar.fullname" $global }}-{{ $global.Values.zookeeper.component }}{{ end }}
+    {{- if and .Values.enableTls .Values.tls.zookeeper.enabled }}
+    configurationStoreServers: {{ include "pulsar.zkConnectStringTls" . }}
+    {{- else }}
+    configurationStoreServers: {{ include "pulsar.zkConnectString" . }}
+    {{- end }}
+    {{- if and .Values.enableTls .Values.tls.zookeeper.enabled }}
+    zookeeperServers: {{ include "pulsar.zkConnectStringTls" . }}
+    {{- else }}
+    zookeeperServers: {{ include "pulsar.zkConnectString" . }}
+    {{- end }}
     zooKeeperSessionTimeoutMillis: 30000
     pulsarFunctionsCluster: "{{ template "pulsar.fullname" . }}"
     workerId: "{{ template "pulsar.fullname" . }}-{{ .Values.function.component }}"
@@ -39,16 +48,19 @@ data:
     workerPort: "6750"
     {{- if .Values.enableTls }}
     workerPortTls: "6751"
-    tlsEnabled: "true"
-    useTls: "true"
     tlsCertificateFilePath: "/pulsar/certs/tls.crt"
     {{- if .Values.secrets }}
     tlsTrustCertsFilePath: /pulsar/certs/ca.crt
+    brokerClientTrustCertsFilePath: "/pulsar/certs/ca.crt"
     {{- else }}
-    tlsTrustCertsFilePath: "/etc/ssl/certs/{{ .Values.tlsCaCert }}"
+    tlsTrustCertsFilePath: "{{ .Values.tlsCaPath }}/{{ .Values.tlsCaCert }}"
+    brokerClientTrustCertsFilePath: "{{ .Values.tlsCaPath }}/{{ .Values.tlsCaCert }}"
     {{- end }}
     tlsKeyFilePath: "/pulsar/tls-pk8.key"
-    tlsAllowInsecureConnection: "true"
+    {{- end }}
+    {{- if and .Values.enableTls .Values.tls.function.enabled }}
+    tlsEnabled: "true"
+    useTls: "true"
     pulsarServiceUrl: "pulsar+ssl://{{ template "pulsar.fullname" . }}-{{ .Values.broker.component }}:6651"
     pulsarWebServiceUrl: "https://{{ template "pulsar.fullname" . }}-{{ .Values.broker.component }}:8443" 
     {{- else }}
@@ -60,7 +72,7 @@ data:
     pulsarFunctionsNamespace: "public/functions"
     functionMetadataTopicName: "metadata"
     clusterCoordinationTopicName: "coordinate"
-    numHttpServerThreads: "8"
+    numHttpServerThreads: "16"
     schedulerClassName: "org.apache.pulsar.functions.worker.scheduler.RoundRobinScheduler"
     functionAssignmentTopicName: "assignments"
     failureCheckFreqMs: "30000"
@@ -70,7 +82,15 @@ data:
     instanceLivenessCheckFreqMs: "30000"
     topicCompactionFrequencySec: "1800"
     {{- if .Values.function.enableStateStorage }}
-    stateStorageServiceUrl: "bk://{{ template "pulsar.fullname" . }}-{{ .Values.stateStorage.component }}:4181"
+    {{- if .Values.function.stateStorageUrlOverride }}
+    stateStorageServiceUrl: {{ .Values.function.stateStorageUrlOverride }}
+    {{- else }}
+    {{- if .Values.extra.stateStorage }}
+    stateStorageServiceUrl: "bk://{{ template "pulsar.fullname" . }}-{{ .Values.stateStorage.component }}-0.{{ template "pulsar.fullname" . }}-{{ .Values.stateStorage.component }}:4181"
+    {{- else }}
+    stateStorageServiceUrl: {{ include "pulsar.bkConnectStringOne" . }}
+    {{- end }}
+    {{- end }}
     {{- end }}
     {{- if .Values.enableTokenAuth }}
     authenticationEnabled: "true"
@@ -78,7 +98,7 @@ data:
     authorizationProvider: "org.apache.pulsar.broker.authorization.PulsarAuthorizationProvider"
     authenticationProviders: [org.apache.pulsar.broker.authentication.AuthenticationProviderToken, org.apache.pulsar.broker.authentication.AuthenticationProviderTls]
     properties:
-      tokenPublicKey: "file:///pulsar/token-public-key/my-public.key"
+      tokenPublicKey: "file:///pulsar/token-public-key/{{ .Values.tokenPublicKeyFile }}"
     clientAuthenticationPlugin: "org.apache.pulsar.client.impl.auth.AuthenticationToken"
     clientAuthenticationParameters: "file:///pulsar/token-superuser/superuser.jwt" 
     superUserRoles: 

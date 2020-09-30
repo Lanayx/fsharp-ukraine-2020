@@ -47,7 +47,10 @@ spec:
       annotations:
 {{ toYaml .Values.bastion.annotations | indent 8 }}
     spec:
-    {{- if (.Values.nodeSelector) and (eq .Values.bastion.nodeSelector false) }}
+      {{- if .Values.priorityClass.enabled }}
+      priorityClassName: pulsar-priority
+      {{- end }}
+    {{- if and (.Values.nodeSelector) (not .Values.bastion.nodeSelector) }}
       nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 8 }}
     {{- end }}
@@ -55,10 +58,15 @@ spec:
       nodeSelector:
 {{ toYaml .Values.bastion.nodeSelector | indent 8 }}
     {{- end }}
-    {{- if .Values.bastion.tolerations }}
+      {{- if .Values.bastion.nodeAffinity }}
+      affinity:
+        nodeAffinity:
+{{ toYaml .Values.bastion.nodeAffinity | indent 10 }}
+      {{- end }}
+      {{- if .Values.bastion.tolerations }}
       tolerations:
 {{ toYaml .Values.bastion.tolerations | indent 8 }}
-    {{- end }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.bastion.gracePeriod }}
       volumes:
         {{- if .Values.enableTokenAuth }}
@@ -114,14 +122,31 @@ spec:
           {{- if .Values.enableTokenAuth }}
           cat /pulsar/token-superuser/superuser.jwt | tr -d '\n' > /pulsar/token-superuser-stripped.jwt &&
           {{- end }}
+          {{- if .Values.bastion.installDebugTools }}
+          apt-get update &&
+          apt-get install vim tcpdump -y &&
+          echo "PATH=\$PATH:/pulsar/bin" >> /root/.bashrc &&
+          {{- end }}
           bin/apply-config-from-env.py conf/client.conf &&
-          sleep 10000000000
+          exec /bin/bash -c "trap : TERM INT; sleep infinity & wait"
         envFrom:
         - configMapRef:
             name: "{{ template "pulsar.fullname" . }}-{{ .Values.bastion.component }}"
         env:
+        # If proxy is deployed, us that for web service URL to 
+        # properly forward command to broker or function worker
+        {{- if .Values.extra.proxy }}
+        {{- if .Values.enableTls }}
+        - name: webServiceUrl
+          value: https://{{ template "pulsar.fullname" . }}-{{ .Values.proxy.component }}:8443/
+        {{- else }}
         - name: webServiceUrl
           value: http://{{ template "pulsar.fullname" . }}-{{ .Values.proxy.component }}:8080/
+        {{- end }}
+        {{- else }}
+        - name: webServiceUrl
+          value: http://{{ template "pulsar.fullname" . }}-{{ .Values.broker.component }}:8080/
+        {{- end }}
         - name: brokerServiceUrl
           value: pulsar://{{ template "pulsar.fullname" . }}-{{ .Values.broker.component }}:6650/
 {{- end }}

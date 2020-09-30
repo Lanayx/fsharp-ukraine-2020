@@ -17,39 +17,37 @@
 # under the License.
 #
 
-{{- if .Values.extra.monitoring }}
 {{- if .Values.persistence }}
-{{- if or .Values.prometheus.volumes.data.storageClass .Values.default_storage}}
+{{- if .Values.extra.stateStorage }}
+{{- if not .Values.default_storage.existingStorageClassName }}
+{{- if not .Values.stateStorage.volumes.data.existingStorageClassName }}
+{{- if or .Values.stateStorage.volumes.data.storageClass .Values.default_storage}}
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: "{{ template "pulsar.fullname" . }}-{{ .Values.prometheus.component }}-{{ .Values.prometheus.volumes.data.name }}"
+  name: "{{ template "pulsar.fullname" . }}-{{ .Values.stateStorage.component }}-{{ .Values.stateStorage.volumes.data.name }}"
   namespace: {{ .Release.Namespace }}
   labels:
     app: {{ template "pulsar.name" . }}
     chart: {{ template "pulsar.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
-    component: {{ .Values.prometheus.component }}
+    component: {{ .Values.stateStorage.component }}
     cluster: {{ template "pulsar.fullname" . }}
 allowVolumeExpansion: true
-{{- if .Release.IsInstall }}
 reclaimPolicy: Retain
 volumeBindingMode: WaitForFirstConsumer
-{{- end }}
-# If there is specific storage class definition, use that
-# Or use the default if it is defined
-{{- if .Values.prometheus.volumes.data.storageClass }}
-provisioner: {{ .Values.prometheus.volumes.data.storageClass.provisioner }}
+{{- if .Values.stateStorage.volumes.data.storageClass }}
+provisioner: {{ .Values.stateStorage.volumes.data.storageClass.provisioner }}
 parameters:
-  {{- if .Values.prometheus.volumes.data.storageClass.type }}
-  type: {{ .Values.prometheus.volumes.data.storageClass.type }}
+  {{- if .Values.stateStorage.volumes.data.storageClass.type }}
+  type: {{ .Values.stateStorage.volumes.data.storageClass.type }}
   {{- end }}
-  {{- if .Values.prometheus.volumes.data.storageClass.fsType }}
-  fsType: {{ .Values.prometheus.volumes.data.storageClass.fsType }}
+  {{- if .Values.stateStorage.volumes.data.storageClass.fsType }}
+  fsType: {{ .Values.stateStorage.volumes.data.storageClass.fsType }}
   {{- end }}
-  {{- if .Values.prometheus.volumes.data.storageClass.extraParams }}
-{{ toYaml .Values.prometheus.volumes.data.storageClass.extraParams | indent 2 }}
+  {{- if .Values.stateStorage.volumes.data.storageClass.extraParams }}
+{{ toYaml .Values.stateStorage.volumes.data.storageClass.extraParams | indent 2 }}
   {{- end }}
 {{- else if .Values.default_storage }}
 provisioner: {{ .Values.default_storage.provisioner }}
@@ -63,6 +61,8 @@ parameters:
   {{- if .Values.default_storage.extraParams }}
 {{ toYaml .Values.default_storage.extraParams | indent 2 }}
   {{- end }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}

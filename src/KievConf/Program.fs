@@ -18,24 +18,26 @@ open Web.Host
 open FSharp.Control.Tasks.V2.ContextInsensitive
 open Microsoft.AspNetCore.Http
 open Pulsar.Client.Common
-
+open FSharp.UMX
 
 let client = PulsarClientBuilder().ServiceUrl("pulsar://my-pulsar-cluster:30002").Build()
 let commandTopic = Dns.GetHostName() + "InventoryCommand"
+
+// fake Reader creates topic to be picked up by regex function 
 let fakeReader = 
-    ReaderBuilder(client)
+    client.NewReader(Schema.STRING())
         .ReaderName("Fake reader")
         .StartMessageId(MessageId.Earliest)
         .Topic(commandTopic)
         .CreateAsync().GetAwaiter().GetResult()
 
 let producer = 
-    ProducerBuilder(client)
+    client.NewProducer(Schema.STRING())
         .ProducerName(Dns.GetHostName() + "Command producer")
         .Topic(commandTopic)
         .CreateAsync().GetAwaiter().GetResult()
         
-let requests = ConcurrentDictionary<string, TaskCompletionSource<Message>>()
+let requests = ConcurrentDictionary<string, TaskCompletionSource<Message<String>>>()
 
 // ---------------------------------
 // Models
@@ -94,11 +96,11 @@ let getHandler (productId: int) next (ctx: HttpContext) =
     task {
         let data = sprintf "GET|%i" productId
         let key = Guid.NewGuid().ToString("N")
-        let! msgId = producer.SendAsync(MessageBuilder(Encoding.UTF8.GetBytes(data), key))
-        let tcs = TaskCompletionSource<Message>(TaskCreationOptions.RunContinuationsAsynchronously)
+        let! msgId = producer.SendAsync(producer.NewMessage(data, key))
+        let tcs = TaskCompletionSource<Message<String>>(TaskCreationOptions.RunContinuationsAsynchronously)
         requests.TryAdd(key, tcs) |> ignore
         let! message = tcs.Task
-        let result = Encoding.UTF8.GetString(message.Data)
+        let result = message.GetValue()
         let model     = { ProductId = productId; Count = result }
         let view      = Views.index model
         return! htmlView view next ctx
@@ -110,8 +112,8 @@ let addHandler (productId: int) next (ctx: HttpContext) =
         let count = ctx.GetFormValue("count").Value |> int
         let data = sprintf "ADD|%i|%i" productId count
         let key = Guid.NewGuid().ToString("N")
-        let! msgId = producer.SendAsync(MessageBuilder(Encoding.UTF8.GetBytes(data), key))
-        let tcs = TaskCompletionSource<Message>(TaskCreationOptions.RunContinuationsAsynchronously)
+        let! msgId = producer.SendAsync(producer.NewMessage(data, key))
+        let tcs = TaskCompletionSource<Message<String>>(TaskCreationOptions.RunContinuationsAsynchronously)
         requests.TryAdd(key, tcs) |> ignore
         let! message = tcs.Task
         let result = Encoding.UTF8.GetString(message.Data)
@@ -152,7 +154,7 @@ let configureCors (builder : CorsPolicyBuilder) =
            |> ignore
 
 let configureApp (app : IApplicationBuilder) =
-    let env = app.ApplicationServices.GetService<IHostingEnvironment>()
+    let env = app.ApplicationServices.GetService<IHostEnvironment>()
     (match env.IsDevelopment() with
     | true  -> app.UseDeveloperExceptionPage()
     | false -> app.UseGiraffeErrorHandler errorHandler)
@@ -161,9 +163,9 @@ let configureApp (app : IApplicationBuilder) =
         .UseStaticFiles()
         .UseGiraffe(webApp)
 
-let handler (message: Message) =
+let handler (message: Message<String>) =
     Console.WriteLine(System.Text.Encoding.UTF8.GetString(message.Data) + " received")
-    match requests.TryGetValue(message.Key) with
+    match requests.TryGetValue(%message.Key) with
     | true, tcs -> tcs.SetResult(message)
     | _ -> ()
 

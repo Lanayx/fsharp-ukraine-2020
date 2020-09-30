@@ -13,14 +13,13 @@ open Pulsar.Client.Api
 open Pulsar.Client.Common
 open System.Threading
 
-
-type PulsarConsumer(pulsarClient: PulsarClient, Log: ILogger, errorConsuming, hostName: string, handler: Message -> unit,
+type PulsarConsumer(pulsarClient: PulsarClient, Log: ILogger, errorConsuming, hostName: string, handler: Message<String> -> unit,
                     commandTopic: string) =
     inherit BackgroundService()
-    do Log.LogInformation("Init KafkaConsumer {0}", hostName)
+    do Log.LogInformation("Init PulsarConsumer {0}", hostName)
 
     let configurePulsar prefix =
-        ConsumerBuilder(pulsarClient)
+        pulsarClient.NewConsumer(Schema.STRING())
             .Topic(prefix + "output")
             .ConsumerName(prefix + " consumer")
             .SubscriptionName(hostName)
@@ -29,9 +28,9 @@ type PulsarConsumer(pulsarClient: PulsarClient, Log: ILogger, errorConsuming, ho
             .SubscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
             .SubscribeAsync()
 
-    let runConsumer (consumer: IConsumer) (cancellationToken: CancellationToken) =
+    let runConsumer (consumer: IConsumer<String>) (cancellationToken: CancellationToken) =
         task {
-            Log.LogInformation("ExecuteAsync KafkaConsumer. {0} Processing...", hostName)
+            Log.LogInformation("ExecuteAsync PulsarConsumer. {0} Processing...", hostName)
             try
                 while (cancellationToken.IsCancellationRequested |> not) do
                     let mutable success = false

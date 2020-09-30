@@ -49,9 +49,16 @@ spec:
         component: {{ .Values.stateStorage.component }}
         cluster: {{ template "pulsar.fullname" . }}
       annotations:
+        publishNotReadyAddresses: "true"
+        service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+      {{- if .Values.restartOnConfigMapChange.enabled }}
         checksum/config: {{ include (print $.Template.BasePath "/state-configmap.yaml") . | sha256sum }}
+      {{- end }}
 {{ toYaml .Values.stateStorage.annotations | indent 8 }}
     spec:
+      {{- if .Values.priorityClass.enabled }}
+      priorityClassName: pulsar-priority
+      {{- end }}
       {{- if (.Values.nodeSelector) and (eq .Values.stateStorage.nodeSelector false) }}
       nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 8 }}
@@ -65,19 +72,13 @@ spec:
 {{ toYaml .Values.stateStorage.tolerations | indent 8 }}
       {{- end }}
       affinity:
-        {{- if .Values.stateStorage.preferredZone }}
+        {{- if .Values.stateStorage.nodeAffinity }}
         nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 1
-            preference:
-              matchExpressions:
-              - key: failure-domain.beta.kubernetes.io
-                operator: In
-                values:
-                - {{ .Values.stateStorage.preferredZone }}
+{{ toYaml .Values.stateStorage.nodeAffinity | indent 10 }}
         {{- end }}
         {{- if .Values.enableAntiAffinity }}
         podAntiAffinity:
+          {{- if .Values.antiAffinity.host.enabled }}
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
               matchExpressions:
@@ -94,13 +95,34 @@ spec:
                 values:
                 - {{ .Values.stateStorage.component }}
             topologyKey: "kubernetes.io/hostname"
+          {{- end }}
+          {{- if .Values.antiAffinity.zone.enabled }}
+          preferredDuringSchedulingIgnoredDuringExecution: 
+          - weight: 100  
+            podAffinityTerm:
+              topologyKey: failure-domain.beta.kubernetes.io/zone
+              labelSelector:
+                matchExpressions:
+                - key: "app"
+                  operator: In
+                  values:
+                  - "{{ template "pulsar.name" . }}"
+                - key: "release"
+                  operator: In
+                  values:
+                  - {{ .Release.Name }}
+                - key: "component"
+                  operator: In
+                  values:
+                  - {{ .Values.stateStorage.component }}
+          {{- end }} 
         {{- end }}   
       terminationGracePeriodSeconds: {{ .Values.stateStorage.gracePeriod }}
       containers:
       - name: "{{ template "pulsar.fullname" . }}-{{ .Values.stateStorage.component }}"
         image: "{{ .Values.image.stateStorage.repository }}:{{ .Values.image.stateStorage.tag }}"
-        imagePullPolicy: {{ .Values.image.pullPolicy }}
-        {{- if .Values.stateStorage.probe }}
+        imagePullPolicy: {{ .Values.image.stateStorage.pullPolicy }}
+        {{- if .Values.stateStorage.probe.enabled }}
         readinessProbe:
           tcpSocket:
             port: {{ .Values.stateStorage.probe.port }}
@@ -115,7 +137,7 @@ spec:
         args:
         - >
           bin/apply-config-from-env.py conf/pulsar_env.sh &&
-          bin/pulsar standalone --no-broker --stream-containers {{ .Values.stateStorage.numStorageContainers }} --stream-use-hostname
+          exec bin/pulsar standalone --no-broker --stream-containers {{ .Values.stateStorage.numStorageContainers }} --stream-use-hostname
         ports:
         - name: bkstate
           containerPort: 4181
@@ -139,8 +161,18 @@ spec:
       resources:
         requests:
           storage: {{ .Values.stateStorage.volumes.data.size }}
-    {{- if or .Values.stateStorage.volumes.data.storageClass .Values.default_storage }}
-      {{- if .Release.IsInstall }}
+    {{- if or .Values.stateStorage.volumes.data.existingStorageClassName .Values.default_storage.existingStorageClassName }}
+      {{- if .Values.stateStorage.volumes.data.existingStorageClassName}}
+      {{- if ne .Values.stateStorage.volumes.data.existingStorageClassName "default"}}
+      storageClassName: "{{ .Values.stateStorage.volumes.data.existingStorageClassName }}"
+      {{- end }}
+      {{- else }}
+      {{- if ne .Values.default_storage.existingStorageClassName "default"}}
+      storageClassName: "{{ .Values.default_storage.existingStorageClassName }}"
+      {{- end }}
+      {{- end }}
+    {{- else }}
+      {{- if or .Values.stateStorage.volumes.data.storageClass .Values.default_storage }}
       storageClassName: "{{ template "pulsar.fullname" . }}-{{ .Values.stateStorage.component }}-{{ .Values.stateStorage.volumes.data.name }}"
       {{- end }}
     {{- end }}

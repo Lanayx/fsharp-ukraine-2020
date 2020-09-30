@@ -33,10 +33,27 @@ metadata:
 spec:
   template:
     spec:
+      {{- if .Values.zookeeper.nodeAffinity }}
+      affinity:
+        nodeAffinity:
+{{ toYaml .Values.zookeeper.nodeAffinity | indent 10 }}
+      {{- end }}
+    {{- if and (.Values.nodeSelector) (not .Values.zookeeper.nodeSelector) }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 8 }}
+    {{- end }}
+    {{- if .Values.zookeeper.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.zookeeper.nodeSelector | indent 8 }}
+    {{- end }}
+    {{- if .Values.zookeeper.tolerations }}
+      tolerations:
+{{ toYaml .Values.zookeeper.tolerations | indent 8 }}
+    {{- end }}
       initContainers:
       - name: wait-zookeeper-ready
         image: "{{ .Values.image.zookeeper.repository }}:{{ .Values.image.zookeeper.tag }}"
-        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        imagePullPolicy: {{ .Values.image.zookeeper.pullPolicy }}
         command: ["sh", "-c"]
         args:
           - >-
@@ -46,7 +63,7 @@ spec:
       containers:
       - name: "{{ template "pulsar.fullname" . }}-{{ .Values.zookeeperMetadata.component }}"
         image: "{{ .Values.image.zookeeper.repository }}:{{ .Values.image.zookeeper.tag }}"
-        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        imagePullPolicy: {{ .Values.image.zookeeper.pullPolicy }}
       {{- if .Values.zookeeperMetadata.resources }}
         resources:
 {{ toYaml .Values.zookeeperMetadata.resources | indent 10 }}
