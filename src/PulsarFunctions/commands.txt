@@ -4,4 +4,8 @@ bin/pulsar-admin functions create \
   --jar examples/my-examples.jar \
   --classname org.apache.pulsar.functions.api.examples.InventoryProcessor \
   --topics-pattern persistent://public/default/.*?InventoryCommand \
-  --name inventory-command
+  --name inventory-command \
+  --processing-guarantees EFFECTIVELY_ONCE \
+  --output persistent://public/default/InventoryEvent
+
+bin/pulsar-client consume persistent://public/default/InventoryEvent -s EventConsumer -n 0
