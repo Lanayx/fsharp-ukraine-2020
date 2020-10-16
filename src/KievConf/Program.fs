@@ -68,14 +68,11 @@ module Views =
             body [] content
         ]
 
-    let partial () =
-        h1 [] [ encodedText "KievConf" ]
-
     let index (model : ViewModel) =
         let mutable count = 0;
         
         [
-            partial()
+            h1 [] [ encodedText "KievConf" ]
             h1 [] [ encodedText (sprintf "Product %i" model.ProductId)  ]
             if (Int32.TryParse(model.Count, &count)) then
                 p [] [ encodedText (sprintf "Inventory count: %i" count) ]
@@ -101,8 +98,8 @@ let getHandler (productId: int) next (ctx: HttpContext) =
         requests.TryAdd(key, tcs) |> ignore
         let! message = tcs.Task
         let result = message.GetValue()
-        let model     = { ProductId = productId; Count = result }
-        let view      = Views.index model
+        let model = { ProductId = productId; Count = result }
+        let view = Views.index model
         return! htmlView view next ctx
     }
     
@@ -117,8 +114,8 @@ let addHandler (productId: int) next (ctx: HttpContext) =
         requests.TryAdd(key, tcs) |> ignore
         let! message = tcs.Task
         let result = Encoding.UTF8.GetString(message.Data)
-        let model     = { ProductId = productId; Count = result }
-        let view      = Views.index model
+        let model = { ProductId = productId; Count = result }
+        let view = Views.index model
         return! htmlView view next ctx
     }
 
@@ -164,7 +161,7 @@ let configureApp (app : IApplicationBuilder) =
         .UseGiraffe(webApp)
 
 let handler (message: Message<String>) =
-    Console.WriteLine(System.Text.Encoding.UTF8.GetString(message.Data) + " received")
+    Console.WriteLine(Encoding.UTF8.GetString(message.Data) + " received")
     match requests.TryGetValue(%message.Key) with
     | true, tcs -> tcs.SetResult(message)
     | _ -> ()

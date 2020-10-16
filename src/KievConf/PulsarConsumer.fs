@@ -32,7 +32,7 @@ type PulsarConsumer(pulsarClient: PulsarClient, Log: ILogger, errorConsuming, ho
         task {
             Log.LogInformation("ExecuteAsync PulsarConsumer. {0} Processing...", hostName)
             try
-                while (cancellationToken.IsCancellationRequested |> not) do
+                while not cancellationToken.IsCancellationRequested do
                     let mutable success = false
                     let! message = consumer.ReceiveAsync()
                     try

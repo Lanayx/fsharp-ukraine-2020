@@ -24,10 +24,7 @@ import org.apache.pulsar.functions.api.Context;
 import org.apache.pulsar.functions.api.Function;
 import org.apache.pulsar.functions.api.Record;
 import org.slf4j.Logger;
-
 import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.Optional;
 
 
 /**
@@ -60,12 +57,12 @@ public class InventoryProcessor implements Function<String, String> {
         String[] a = input.split("\\|");
         String method = a[0];
         String productId = a[1];
-        int currentCount = 0;
+        int oldCount = 0;
         long oldSequenceNumber = 0;
         try {
             ByteBuffer buffer = context.getState(productId);
             buffer.rewind();
-            currentCount = buffer.getInt();
+            oldCount = buffer.getInt();
             oldSequenceNumber = buffer.getLong();
         } catch (Exception e) {
             logger.info(e.toString());
@@ -78,22 +75,21 @@ public class InventoryProcessor implements Function<String, String> {
 
         switch (method) {
             case "GET":
-                respond("" + currentCount, context);
+                respond("" + oldCount, context);
                 return null;
             case "ADD":
                 int operationCount = Integer.parseInt(a[2]);
-                int newCount = currentCount + operationCount;
+                int newCount = oldCount + operationCount;
                 if (newCount >= 0) {
                     ByteBuffer buffer = ByteBuffer.allocate(12);
                     buffer.putInt(newCount);
                     buffer.putLong(sequenceNumber);
                     buffer.rewind();
                     context.putState(productId, buffer);
-
                     respond("" + newCount, context);
                     return input;
                 } else {
-                    logger.error("Couldn't increment" + productId + " by" + operationCount);
+                    logger.error("Couldn't increment product: " + productId + " by " + operationCount);
                     respond("Validation error", context);
                     return null;
                 }
