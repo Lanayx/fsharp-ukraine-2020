@@ -59,14 +59,6 @@ spec:
       {{- if .Values.priorityClass.enabled }}
       priorityClassName: pulsar-priority
       {{- end }}
-      {{- if (.Values.nodeSelector) and (eq .Values.stateStorage.nodeSelector false) }}
-      nodeSelector:
-{{ toYaml .Values.nodeSelector | indent 8 }}
-      {{- end }}
-      {{- if .Values.stateStorage.nodeSelector }}
-      nodeSelector:
-{{ toYaml .Values.stateStorage.nodeSelector | indent 8 }}
-      {{- end }}
       {{- if .Values.stateStorage.tolerations }}
       tolerations:
 {{ toYaml .Values.stateStorage.tolerations | indent 8 }}
