@@ -66,11 +66,16 @@ public class InventoryProcessor implements Function<String, String> {
             oldSequenceNumber = buffer.getLong();
         } catch (Exception e) {
             logger.info(e.toString());
-            logger.info("Conter doesn't exist");
+            logger.info("Counter doesn't exist");
         }
-        if (oldSequenceNumber >= sequenceNumber){
-            logger.info("Skip duplicate command");
+        if (oldSequenceNumber > sequenceNumber){
+            logger.info("Skip old command");
             return null;
+        }
+        if (oldSequenceNumber == sequenceNumber){
+            logger.info("Resending event");
+            respond("" + oldCount, context);
+            return input;
         }
 
         switch (method) {
