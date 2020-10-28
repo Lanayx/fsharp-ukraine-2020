@@ -72,17 +72,16 @@ public class InventoryProcessor implements Function<String, String> {
             logger.info("Skip old command");
             return null;
         }
-        if (oldSequenceNumber == sequenceNumber){
-            logger.info("Resending event");
-            respond("" + oldCount, context);
-            return input;
-        }
-
         switch (method) {
             case "GET":
                 respond("" + oldCount, context);
                 return null;
             case "ADD":
+                if (oldSequenceNumber == sequenceNumber){
+                    logger.info("Resending event");
+                    respond("" + oldCount, context);
+                    return input;
+                }
                 int operationCount = Integer.parseInt(a[2]);
                 int newCount = oldCount + operationCount;
                 if (newCount >= 0) {
